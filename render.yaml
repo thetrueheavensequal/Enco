@@ -1,0 +1,38 @@
+services:
+  - type: worker
+    name: video-encoder-bot
+    env: python
+    region: oregon
+    plan: free
+    
+    # Build command - installs FFmpeg and Python dependencies
+    buildCommand: apt-get update && apt-get install -y ffmpeg && pip install --upgrade pip && pip install -r requirements.txt
+    
+    # Start command
+    startCommand: python bot.py
+    
+    # Auto-deploy on git push
+    autoDeploy: true
+    
+    # Health check (optional but recommended)
+    healthCheckPath: /
+    
+    # Environment variables (set these in Render dashboard)
+    envVars:
+      - key: API_ID
+        sync: false
+      
+      - key: API_HASH
+        sync: false
+      
+      - key: BOT_TOKEN
+        sync: false
+      
+      - key: AUTHORIZED_USER
+        sync: false
+      
+      - key: MONGO_URI
+        sync: false
+      
+      - key: PYTHON_VERSION
+        value: 3.11.7
