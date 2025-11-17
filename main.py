@@ -14,7 +14,7 @@ import re
 import subprocess
 from threading import Thread
 
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle  # ADDED idle import
 from pyrogram.types import (
     Message, 
     InlineKeyboardMarkup, 
@@ -732,7 +732,9 @@ async def main():
     except Exception as e:
         logger.warning(f"Could not send startup notification: {e}")
     
-    await asyncio.Event().wait()
+    # FIXED: Use idle() instead of asyncio.Event().wait()
+    logger.info("📡 Now listening for updates...")
+    await idle()
 
 if __name__ == "__main__":
     asyncio.run(main())
