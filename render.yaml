@@ -36,3 +36,6 @@ services:
       
       - key: PYTHON_VERSION
         value: 3.11.7
+        
+      - key: PORT
+        value: 10000
