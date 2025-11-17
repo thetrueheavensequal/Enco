@@ -9,7 +9,7 @@ services:
     buildCommand: apt-get update && apt-get install -y ffmpeg && pip install --upgrade pip && pip install -r requirements.txt
     
     # Start command
-    startCommand: python bot.py
+    startCommand: python main.py
     
     # Auto-deploy on git push
     autoDeploy: true
