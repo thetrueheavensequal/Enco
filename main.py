@@ -38,8 +38,6 @@ def health_check():
 def health():
     return {'status': 'healthy'}, 200
 
-# Removed run_flask() function, as it's now handled in the __main__ block
-
 # ==================== CONFIGURATION ====================
 
 load_dotenv()
@@ -717,10 +715,12 @@ async def main():
     # 1. Start Pyrogram Client
     await app.start()
     
-    # 2. Set the Webhook URL with Telegram
+    # 2. Log the webhook receiver URL
+    # We must set the webhook manually with Telegram (see instructions)
+    # Pyrogram's client does not have a .set_webhook() method.
     if WEBHOOK_URL:
-        await app.set_webhook(WEBHOOK_URL)
-        logger.info(f"✅ Webhook set to: {WEBHOOK_URL}")
+        logger.info(f"✅ Webhook receiver is ready at: {WEBHOOK_URL}")
+        logger.info("👉 You must set this URL with Telegram manually (see instructions).")
     else:
         logger.warning("⚠️ RENDER_EXTERNAL_URL not set. Webhooks disabled.")
     
