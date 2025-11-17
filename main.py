@@ -1,5 +1,5 @@
 # bot.py - Complete Video Encoder Bot for Render
-# Modern 2025 version with full FFmpeg support
+# Modern 2025 version with full FFmpeg support + Flask health endpoint
 
 import os
 import asyncio
@@ -12,6 +12,7 @@ import time
 import math
 import re
 import subprocess
+from threading import Thread
 
 from pyrogram import Client, filters
 from pyrogram.types import (
@@ -22,6 +23,24 @@ from pyrogram.types import (
 )
 import motor.motor_asyncio
 from dotenv import load_dotenv
+from flask import Flask
+
+# ==================== FLASK HEALTH ENDPOINT ====================
+
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def health_check():
+    return {'status': 'ok', 'bot': 'running'}, 200
+
+@flask_app.route('/health')
+def health():
+    return {'status': 'healthy'}, 200
+
+def run_flask():
+    """Run Flask in a separate thread"""
+    port = int(os.getenv('PORT', 10000))
+    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # ==================== CONFIGURATION ====================
 
@@ -668,6 +687,12 @@ async def callback_handler(client, callback: CallbackQuery):
 async def main():
     """Main function"""
     logger.info("🚀 Starting Video Encoder Bot 2025...")
+    
+    # Start Flask in background thread
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    logger.info(f"✅ Flask health endpoint running on port {os.getenv('PORT', 10000)}")
+    
     await app.start()
     logger.info("✅ Bot is running on Render!")
     
