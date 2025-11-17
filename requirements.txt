@@ -1,0 +1,29 @@
+# Video Encoder Bot 2025 - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core Framework
+pyrogram>=2.0.106
+TgCrypto>=1.2.5
+
+# Database
+motor>=3.3.2
+pymongo>=4.6.1
+
+# Configuration
+python-dotenv>=1.0.0
+
+# Media Processing
+ffmpeg-python>=0.2.0
+
+# Utilities
+aiofiles>=23.2.1
+pillow>=10.2.0
+
+# Async Support
+asyncio>=3.4.3
+
+# Logging
+colorlog>=6.8.0
+
+# Optional: Progress bars
+tqdm>=4.66.1
