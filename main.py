@@ -75,6 +75,9 @@ logger = logging.getLogger(__name__)
 
 # ==================== DATABASE ====================
 
+# Global variable to hold the main event loop
+main_loop = None
+
 class Database:
     """Database handler"""
     
@@ -144,12 +147,18 @@ else:
 
 if WEBHOOK_PATH:
     @flask_app.route(WEBHOOK_PATH, methods=["POST"])
-    async def telegram_webhook_handler():
+    def telegram_webhook_handler(): # <-- Now a SYNC function
         """Route that receives updates from Telegram"""
         from flask import request
-        # Pass the incoming update to Pyrogram's handler
-        if request.json:
-            await app.handle_incoming_json(request.json)
+        
+        if request.json and main_loop:
+            # This is a sync function. We must use run_coroutine_threadsafe
+            # to submit the async task to the main event loop.
+            async def process_update():
+                await app.handle_incoming_json(request.json)
+            
+            asyncio.run_coroutine_threadsafe(process_update(), main_loop)
+            
         return "OK", 200
 
 # ==================== UTILITIES ====================
@@ -699,6 +708,10 @@ async def callback_handler(client, callback: CallbackQuery):
 
 async def main():
     """Main function"""
+    # Grab the main event loop for the sync Flask thread
+    global main_loop
+    main_loop = asyncio.get_event_loop()
+    
     logger.info("🚀 Starting Video Encoder Bot 2025 (WEBHOOK MODE)...")
     logger.info(f"📋 Config check:")
     logger.info(f"   API_ID: {config.API_ID}")
@@ -716,8 +729,6 @@ async def main():
     await app.start()
     
     # 2. Log the webhook receiver URL
-    # We must set the webhook manually with Telegram (see instructions)
-    # Pyrogram's client does not have a .set_webhook() method.
     if WEBHOOK_URL:
         logger.info(f"✅ Webhook receiver is ready at: {WEBHOOK_URL}")
         logger.info("👉 You must set this URL with Telegram manually (see instructions).")
@@ -728,7 +739,6 @@ async def main():
     logger.info("📡 Now listening for updates via Flask Webhook...")
     
     # 3. Run the main Pyrogram event loop indefinitely
-    # Flask is started in the __name__ == "__main__" block
     await asyncio.get_event_loop().create_future() 
 
 if __name__ == "__main__":
@@ -742,4 +752,4 @@ if __name__ == "__main__":
     logger.info(f"✅ Flask health endpoint running on port {port}")
     
     # 2. Run the main Pyrogram setup (which includes setting the webhook)
-    asyncio.run(main())
+    asyncio.run(main())v
