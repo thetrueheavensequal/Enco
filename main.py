@@ -1,20 +1,20 @@
 # bot.py - Complete Video Encoder Bot for Render
 # Modern 2025 version with full FFmpeg support + Flask health endpoint
+# PUBLIC VERSION - No authorization restrictions
 
 import os
 import asyncio
 import logging
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Literal
+from typing import Optional
 from datetime import datetime
 import time
 import math
-import re
 import subprocess
 from threading import Thread
 
-from pyrogram import Client, filters, idle  # ADDED idle import
+from pyrogram import Client, filters, idle
 from pyrogram.types import (
     Message, 
     InlineKeyboardMarkup, 
@@ -53,7 +53,6 @@ class Config:
     API_HASH: str = os.getenv("API_HASH")
     BOT_TOKEN: str = os.getenv("BOT_TOKEN")
     MONGO_URI: str = os.getenv("MONGO_URI")
-    AUTHORIZED_USER: int = int(os.getenv("AUTHORIZED_USER"))
     
     # Directories
     DOWNLOAD_DIR: Path = Path("/tmp/downloads")
@@ -383,38 +382,21 @@ class VideoEncoder:
 
 encoder = VideoEncoder()
 
-# ==================== DECORATORS ====================
-
-def authorized_only(func):
-    """Authorization decorator"""
-    async def wrapper(client, message):
-        user_id = message.from_user.id
-        logger.info(f"Authorization check: user_id={user_id}, authorized={config.AUTHORIZED_USER}")
-        if user_id != config.AUTHORIZED_USER:
-            logger.warning(f"Unauthorized access attempt by {user_id}")
-            await message.reply_text("🚫 **Access Denied**\n\nThis bot is private.")
-            return
-        logger.info(f"User {user_id} authorized, executing command")
-        return await func(client, message)
-    return wrapper
-
 # ==================== HANDLERS ====================
 
-# Test handler - no auth required
 @app.on_message(filters.command("ping") & filters.private)
 async def ping_handler(client, message: Message):
     """Test handler to check if bot is receiving messages"""
     logger.info(f"PING received from {message.from_user.id}")
-    await message.reply_text("🏓 Pong!")
+    await message.reply_text("🏓 Pong! Bot is working!")
 
 @app.on_message(filters.command("start") & filters.private)
-@authorized_only
 async def start_handler(client, message: Message):
     """Start command"""
     logger.info(f"Received /start from user {message.from_user.id}")
     await message.reply_text(
         "🎬 **Video Encoder Bot 2025**\n\n"
-        "Welcome! I'm your personal video encoding assistant.\n\n"
+        "Welcome! I'm a video encoding assistant available for everyone.\n\n"
         "✨ **Features:**\n"
         "• Multiple quality presets (720p, 480p, 360p)\n"
         "• Custom file naming\n"
@@ -425,7 +407,6 @@ async def start_handler(client, message: Message):
     )
 
 @app.on_message(filters.command("help") & filters.private)
-@authorized_only
 async def help_handler(client, message: Message):
     """Help command"""
     help_text = """
@@ -438,6 +419,7 @@ async def help_handler(client, message: Message):
 
 **Commands:**
 • `/start` - Show main menu
+• `/ping` - Test bot connectivity
 • `/help` - Show this help
 • `/settings` - View/change settings
 • `/setthumb` - Set thumbnail (reply to image)
@@ -457,7 +439,6 @@ async def help_handler(client, message: Message):
     await message.reply_text(help_text, reply_markup=ui.main_menu())
 
 @app.on_message(filters.command("settings") & filters.private)
-@authorized_only
 async def settings_handler(client, message: Message):
     """Settings command"""
     user_id = message.from_user.id
@@ -475,7 +456,6 @@ async def settings_handler(client, message: Message):
     )
 
 @app.on_message(filters.command("setthumb") & filters.private)
-@authorized_only
 async def set_thumbnail_handler(client, message: Message):
     """Set thumbnail"""
     if not message.reply_to_message or not message.reply_to_message.photo:
@@ -494,7 +474,6 @@ async def set_thumbnail_handler(client, message: Message):
     )
 
 @app.on_message(filters.command("delthumb") & filters.private)
-@authorized_only
 async def delete_thumbnail_handler(client, message: Message):
     """Delete thumbnail"""
     await db.set_thumbnail(message.from_user.id, None)
@@ -504,9 +483,10 @@ async def delete_thumbnail_handler(client, message: Message):
     )
 
 @app.on_message(filters.video & filters.private)
-@authorized_only
 async def video_handler(client, message: Message):
     """Handle video uploads"""
+    logger.info(f"Video received from user {message.from_user.id}")
+    
     status_msg = await message.reply_text(
         "📥 **Processing Video**\n\n⏳ Initializing...",
         reply_markup=ui.cancel_button()
@@ -609,9 +589,7 @@ async def callback_handler(client, callback: CallbackQuery):
     data = callback.data
     user_id = callback.from_user.id
     
-    if user_id != config.AUTHORIZED_USER:
-        await callback.answer("Access denied!", show_alert=True)
-        return
+    logger.info(f"Callback received: {data} from user {user_id}")
     
     if data == "main_menu":
         await callback.message.edit_text(
@@ -693,6 +671,9 @@ async def callback_handler(client, callback: CallbackQuery):
                 "❌ No thumbnail set\nReply to image with /setthumb",
                 show_alert=True
             )
+    
+    elif data == "cancel":
+        await callback.answer("❌ Operation cancelled", show_alert=True)
 
 # ==================== MAIN ====================
 
@@ -702,8 +683,8 @@ async def main():
     logger.info(f"📋 Config check:")
     logger.info(f"   API_ID: {config.API_ID}")
     logger.info(f"   BOT_TOKEN: {'*' * 10}{config.BOT_TOKEN[-10:] if len(config.BOT_TOKEN) > 10 else '***'}")
-    logger.info(f"   AUTHORIZED_USER: {config.AUTHORIZED_USER}")
     logger.info(f"   MONGO_URI: {'Connected' if config.MONGO_URI else 'Missing'}")
+    logger.info("   PUBLIC MODE: Anyone can use this bot")
     
     # Start Flask in background thread
     flask_thread = Thread(target=run_flask, daemon=True)
@@ -719,21 +700,9 @@ async def main():
     await app.start()
     logger.info("✅ Bot is running on Render!")
     logger.info(f"✅ Bot username: @{(await app.get_me()).username}")
+    logger.info("📡 Now listening for updates from ALL users...")
     
-    try:
-        await app.send_message(
-            config.AUTHORIZED_USER,
-            "🚀 **Bot Started Successfully!**\n\n"
-            f"🕐 **Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            "✅ **Status:** All systems operational\n"
-            "🏢 **Platform:** Render\n"
-            "🔧 **FFmpeg:** Installed ✅"
-        )
-    except Exception as e:
-        logger.warning(f"Could not send startup notification: {e}")
-    
-    # FIXED: Use idle() instead of asyncio.Event().wait()
-    logger.info("📡 Now listening for updates...")
+    # Use idle() to keep bot running and listening
     await idle()
 
 if __name__ == "__main__":
