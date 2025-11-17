@@ -388,18 +388,30 @@ encoder = VideoEncoder()
 def authorized_only(func):
     """Authorization decorator"""
     async def wrapper(client, message):
-        if message.from_user.id != config.AUTHORIZED_USER:
+        user_id = message.from_user.id
+        logger.info(f"Authorization check: user_id={user_id}, authorized={config.AUTHORIZED_USER}")
+        if user_id != config.AUTHORIZED_USER:
+            logger.warning(f"Unauthorized access attempt by {user_id}")
             await message.reply_text("🚫 **Access Denied**\n\nThis bot is private.")
             return
+        logger.info(f"User {user_id} authorized, executing command")
         return await func(client, message)
     return wrapper
 
 # ==================== HANDLERS ====================
 
+# Test handler - no auth required
+@app.on_message(filters.command("ping") & filters.private)
+async def ping_handler(client, message: Message):
+    """Test handler to check if bot is receiving messages"""
+    logger.info(f"PING received from {message.from_user.id}")
+    await message.reply_text("🏓 Pong!")
+
 @app.on_message(filters.command("start") & filters.private)
 @authorized_only
 async def start_handler(client, message: Message):
     """Start command"""
+    logger.info(f"Received /start from user {message.from_user.id}")
     await message.reply_text(
         "🎬 **Video Encoder Bot 2025**\n\n"
         "Welcome! I'm your personal video encoding assistant.\n\n"
@@ -687,14 +699,26 @@ async def callback_handler(client, callback: CallbackQuery):
 async def main():
     """Main function"""
     logger.info("🚀 Starting Video Encoder Bot 2025...")
+    logger.info(f"📋 Config check:")
+    logger.info(f"   API_ID: {config.API_ID}")
+    logger.info(f"   BOT_TOKEN: {'*' * 10}{config.BOT_TOKEN[-10:] if len(config.BOT_TOKEN) > 10 else '***'}")
+    logger.info(f"   AUTHORIZED_USER: {config.AUTHORIZED_USER}")
+    logger.info(f"   MONGO_URI: {'Connected' if config.MONGO_URI else 'Missing'}")
     
     # Start Flask in background thread
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
     logger.info(f"✅ Flask health endpoint running on port {os.getenv('PORT', 10000)}")
     
+    # Clear old session file
+    session_file = Path("video_encoder_bot.session")
+    if session_file.exists():
+        session_file.unlink()
+        logger.info("🗑️ Cleared old session file")
+    
     await app.start()
     logger.info("✅ Bot is running on Render!")
+    logger.info(f"✅ Bot username: @{(await app.get_me()).username}")
     
     try:
         await app.send_message(
