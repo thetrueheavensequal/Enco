@@ -1,5 +1,6 @@
 # bot.py - Video Encoder Bot 2025
-# Final Version: Flask (Health) + Pyrogram (Polling) + Enhanced Video Filters
+# Final Stable Version
+# Fixes: "NoneType" error on mobile uploads & 502 Bad Gateway
 
 import os
 import asyncio
@@ -376,7 +377,9 @@ class VideoEncoder:
         if custom_name:
             base = custom_name
         else:
-            base = Path(original_name).stem
+            # CRITICAL: original_name should already be handled before calling this,
+            # but we add a safety check here just in case.
+            base = Path(original_name).stem if original_name else "video"
         
         return f"{base}_{quality}.mp4"
 
@@ -477,7 +480,7 @@ def create_bot():
             reply_markup=ui.main_menu()
         )
     
-    # UPDATED VIDEO HANDLER TO ACCEPT "DOCUMENTS" AS VIDEOS
+    # === MAIN HANDLER FIX: Accepts Documents AND Videos ===
     @bot.on_message((filters.video | filters.document) & filters.private)
     async def video_handler(client, message: Message):
         """Handle video uploads (Compressed and Documents)"""
@@ -487,8 +490,8 @@ def create_bot():
         
         # 2. Filter: If it's a document, ensure it is a video file
         if message.document:
-            # If mime_type is missing or doesn't contain 'video', ignore it.
             if not message.document.mime_type or "video" not in message.document.mime_type:
+                # Ignore non-video files (PDFs, etc.)
                 return
 
         logger.info(f"Video received from user {message.from_user.id}")
@@ -510,8 +513,10 @@ def create_bot():
             # Download video
             await status_msg.edit_text("📥 **Downloading Video**\n\n⏳ Please wait...")
             
-            # Handle filename safely
+            # CRITICAL FIX FOR NONE ERROR:
+            # If media.file_name is None (common in mobile uploads), default to "video.mp4"
             original_filename = media.file_name if media.file_name else "video.mp4"
+            
             input_path = config.DOWNLOAD_DIR / f"{message.id}_{original_filename}"
             
             download_start = time.time()
@@ -523,7 +528,7 @@ def create_bot():
             
             # Generate output filename
             output_filename = encoder.generate_output_filename(
-                original_filename,
+                original_filename, # This is now guaranteed to be a string
                 settings['quality'],
                 settings['custom_name']
             )
