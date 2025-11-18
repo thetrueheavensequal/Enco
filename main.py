@@ -1,5 +1,5 @@
 # bot.py - Video Encoder Bot 2025 - Webhook Mode for Render
-# Fixed version with proper webhook handling
+# Fixed: Solves "AttributeError" and "502 Bad Gateway"
 
 import os
 import asyncio
@@ -12,14 +12,14 @@ import time
 import math
 import subprocess
 import json
+import threading
 
 from pyrogram import Client, filters, idle
 from pyrogram.types import (
     Message,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    CallbackQuery,
-    Update
+    CallbackQuery
 )
 import motor.motor_asyncio
 from dotenv import load_dotenv
@@ -60,12 +60,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ==================== GLOBAL VARIABLES ====================
+
+# We need these to bridge the sync Flask thread and async Bot loop
+main_loop = None
+bot = None
+
 # ==================== FLASK APP ====================
 
 flask_app = Flask(__name__)
-
-# Global variable for the bot client
-bot = None
 
 @flask_app.route('/')
 def health_check():
@@ -80,15 +83,20 @@ def health():
 @flask_app.route(f'/webhook/{config.BOT_TOKEN}', methods=['POST'])
 def webhook():
     """Handle incoming webhook from Telegram"""
+    # This function runs in the Flask Thread (Sync)
     try:
         if request.headers.get('content-type') == 'application/json':
             update = request.get_json(force=True)
-            logger.info(f"Received update: {json.dumps(update)[:100]}...")
             
-            if bot:
-                # Create update object and process it
-                asyncio.run(bot.handle_raw_update(update))
-            
+            # CRITICAL FIX: Safely pass the update to the Main Async Loop
+            if bot and main_loop:
+                asyncio.run_coroutine_threadsafe(
+                    bot.handle_incoming_json(update), 
+                    main_loop
+                )
+            else:
+                logger.error("Bot or Main Loop not initialized")
+                
             return 'OK', 200
         else:
             logger.error("Invalid content type")
@@ -679,28 +687,8 @@ def create_bot():
 
 # ==================== MAIN ====================
 
-async def setup_webhook():
-    """Set up webhook"""
-    if not config.WEBHOOK_URL:
-        logger.error("❌ RENDER_EXTERNAL_URL not set!")
-        return False
-    
-    webhook_url = f"{config.WEBHOOK_URL}/webhook/{config.BOT_TOKEN}"
-    
-    try:
-        await bot.set_webhook(webhook_url)
-        webhook_info = await bot.get_webhook_info()
-        logger.info(f"✅ Webhook set: {webhook_info.url}")
-        logger.info(f"   Pending updates: {webhook_info.pending_update_count}")
-        if webhook_info.last_error_message:
-            logger.warning(f"   Last error: {webhook_info.last_error_message}")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Failed to set webhook: {e}")
-        return False
-
 def run_flask():
-    """Run Flask in main thread"""
+    """Run Flask in a separate thread"""
     flask_app.run(
         host='0.0.0.0',
         port=config.PORT,
@@ -710,6 +698,11 @@ def run_flask():
 
 async def main():
     """Main async function"""
+    global main_loop
+    
+    # Store the main event loop so Flask can use it
+    main_loop = asyncio.get_event_loop()
+    
     logger.info("🚀 Starting Video Encoder Bot 2025...")
     logger.info(f"📋 Configuration:")
     logger.info(f"   API_ID: {config.API_ID}")
@@ -722,27 +715,34 @@ async def main():
     
     # Start bot
     await bot.start()
-    logger.info(f"✅ Bot started: @{(await bot.get_me()).username}")
+    me = await bot.get_me()
+    logger.info(f"✅ Bot started: @{me.username}")
     
-    # Set up webhook
-    webhook_ok = await setup_webhook()
-    if not webhook_ok:
-        logger.error("❌ Webhook setup failed!")
-        return
-    
-    logger.info("✅ Bot is ready and listening for webhooks!")
-    logger.info(f"🌐 Flask running on port {config.PORT}")
+    # MANUAL WEBHOOK INSTRUCTION
+    # Pyrogram doesn't have a helper for this, so we tell you how to do it.
+    if config.WEBHOOK_URL:
+        webhook_url = f"{config.WEBHOOK_URL}/webhook/{config.BOT_TOKEN}"
+        logger.info("-" * 50)
+        logger.info("📡 WEBHOOK SETUP REQUIRED (ONE TIME ONLY)")
+        logger.info(f"👉 Please visit this URL in your browser to connect Telegram:")
+        logger.info(f"https://api.telegram.org/bot{config.BOT_TOKEN}/setWebhook?url={webhook_url}")
+        logger.info("-" * 50)
+    else:
+        logger.warning("⚠️ WEBHOOK_URL not set via RENDER_EXTERNAL_URL")
+
+    logger.info("✅ Bot is ready and waiting for webhook updates...")
     
     # Keep bot running
     await idle()
 
 if __name__ == "__main__":
-    # Run Flask in a thread and bot in main thread
-    import threading
-    
-    # Start Flask in background thread
+    # 1. Start Flask in a background thread
+    # We set daemon=True so it dies when the main thread dies
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
-    # Run bot in main thread
-    asyncio.run(main())
+    # 2. Run Pyrogram in the main thread
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
