@@ -36,7 +36,7 @@ class Config:
     API_HASH: str = os.getenv("API_HASH")
     BOT_TOKEN: str = os.getenv("BOT_TOKEN")
     MONGO_URI: str = os.getenv("MONGO_URI")
-    WEBHOOK_URL: str = os.getenv("RENDER_EXTERNAL_URL", "")
+    WEBHOOK_URL: str = os.getenv("RENDER_EXTERNAL_URL", "https://enco-bj4y.onrender.com")
     PORT: int = int(os.getenv("PORT", 10000))
     
     # Directories
