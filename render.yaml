@@ -1,23 +1,19 @@
 services:
   - type: web
     name: video-encoder-bot
-    env: python
+    runtime: docker
     region: oregon
     plan: free
     
-    # Build command - installs FFmpeg and Python dependencies
-    buildCommand: apt-get update && apt-get install -y ffmpeg && pip install --upgrade pip && pip install -r requirements.txt
+    dockerfilePath: ./Dockerfile
     
-    # Start command
-    startCommand: python main.py
-    
-    # Auto-deploy on git push
+    # Auto-deploy
     autoDeploy: true
     
-    # Health check (optional but recommended)
-    healthCheckPath: /
+    # Health check
+    healthCheckPath: /health
     
-    # Environment variables (set these in Render dashboard)
+    # Environment variables
     envVars:
       - key: API_ID
         sync: false
@@ -28,14 +24,8 @@ services:
       - key: BOT_TOKEN
         sync: false
       
-      - key: AUTHORIZED_USER
-        sync: false
-      
       - key: MONGO_URI
         sync: false
       
-      - key: PYTHON_VERSION
-        value: 3.11.7
-        
       - key: PORT
         value: 10000
