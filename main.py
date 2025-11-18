@@ -1,6 +1,5 @@
 # bot.py - Video Encoder Bot 2025
-# Architecture: Flask (Health Check) + Pyrogram (Polling)
-# Fixed: Removes non-existent webhook methods
+# Final Version: Flask (Health) + Pyrogram (Polling) + Enhanced Video Filters
 
 import os
 import asyncio
@@ -433,7 +432,7 @@ def create_bot():
 • **360p** - Low quality
 
 **How to use:**
-1. Send any video file
+1. Send any video file (File or Video format)
 2. Bot encodes it automatically
 3. Get your optimized video back!
         """
@@ -478,9 +477,20 @@ def create_bot():
             reply_markup=ui.main_menu()
         )
     
-    @bot.on_message(filters.video & filters.private)
+    # UPDATED VIDEO HANDLER TO ACCEPT "DOCUMENTS" AS VIDEOS
+    @bot.on_message((filters.video | filters.document) & filters.private)
     async def video_handler(client, message: Message):
-        """Handle video uploads"""
+        """Handle video uploads (Compressed and Documents)"""
+        
+        # 1. Identify the media object
+        media = message.video or message.document
+        
+        # 2. Filter: If it's a document, ensure it is a video file
+        if message.document:
+            # If mime_type is missing or doesn't contain 'video', ignore it.
+            if not message.document.mime_type or "video" not in message.document.mime_type:
+                return
+
         logger.info(f"Video received from user {message.from_user.id}")
         
         status_msg = await message.reply_text(
@@ -500,7 +510,9 @@ def create_bot():
             # Download video
             await status_msg.edit_text("📥 **Downloading Video**\n\n⏳ Please wait...")
             
-            input_path = config.DOWNLOAD_DIR / f"{message.id}_{message.video.file_name}"
+            # Handle filename safely
+            original_filename = media.file_name if media.file_name else "video.mp4"
+            input_path = config.DOWNLOAD_DIR / f"{message.id}_{original_filename}"
             
             download_start = time.time()
             await message.download(
@@ -511,7 +523,7 @@ def create_bot():
             
             # Generate output filename
             output_filename = encoder.generate_output_filename(
-                message.video.file_name,
+                original_filename,
                 settings['quality'],
                 settings['custom_name']
             )
@@ -547,12 +559,14 @@ def create_bot():
             upload_start = time.time()
             total_time = time.time() - start_time
             
+            file_size = output_path.stat().st_size
+            
             caption = (
                 f"✅ **Encoded Successfully!**\n\n"
                 f"📁 **File:** `{output_filename}`\n"
                 f"📹 **Quality:** {settings['quality']}\n"
                 f"⏱️ **Time:** {format_time(total_time)}\n"
-                f"📊 **Size:** {format_bytes(output_path.stat().st_size)}"
+                f"📊 **Size:** {format_bytes(file_size)}"
             )
             
             await message.reply_video(
