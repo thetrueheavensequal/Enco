@@ -1,5 +1,6 @@
-# bot.py - Video Encoder Bot 2025 - Webhook Mode for Render
-# Fixed: Solves "AttributeError" and "502 Bad Gateway"
+# bot.py - Video Encoder Bot 2025
+# Architecture: Flask (Health Check) + Pyrogram (Polling)
+# Fixed: Removes non-existent webhook methods
 
 import os
 import asyncio
@@ -23,7 +24,7 @@ from pyrogram.types import (
 )
 import motor.motor_asyncio
 from dotenv import load_dotenv
-from flask import Flask, request
+from flask import Flask
 
 # ==================== CONFIGURATION ====================
 
@@ -36,7 +37,6 @@ class Config:
     API_HASH: str = os.getenv("API_HASH")
     BOT_TOKEN: str = os.getenv("BOT_TOKEN")
     MONGO_URI: str = os.getenv("MONGO_URI")
-    WEBHOOK_URL: str = os.getenv("RENDER_EXTERNAL_URL", "https://enco-bj4y.onrender.com")
     PORT: int = int(os.getenv("PORT", 10000))
     
     # Directories
@@ -62,48 +62,30 @@ logger = logging.getLogger(__name__)
 
 # ==================== GLOBAL VARIABLES ====================
 
-# We need these to bridge the sync Flask thread and async Bot loop
-main_loop = None
 bot = None
 
-# ==================== FLASK APP ====================
+# ==================== FLASK APP (Keep-Alive) ====================
 
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def health_check():
-    """Health check endpoint"""
-    return {'status': 'ok', 'bot': 'running'}, 200
+    """Health check endpoint to keep Render happy"""
+    return {'status': 'ok', 'bot': 'polling'}, 200
 
 @flask_app.route('/health')
 def health():
     """Alternative health endpoint"""
-    return {'status': 'healthy', 'timestamp': datetime.now().isoformat()}, 200
+    return {'status': 'healthy', 'mode': 'polling'}, 200
 
-@flask_app.route(f'/webhook/{config.BOT_TOKEN}', methods=['POST'])
-def webhook():
-    """Handle incoming webhook from Telegram"""
-    # This function runs in the Flask Thread (Sync)
-    try:
-        if request.headers.get('content-type') == 'application/json':
-            update = request.get_json(force=True)
-            
-            # CRITICAL FIX: Safely pass the update to the Main Async Loop
-            if bot and main_loop:
-                asyncio.run_coroutine_threadsafe(
-                    bot.handle_incoming_json(update), 
-                    main_loop
-                )
-            else:
-                logger.error("Bot or Main Loop not initialized")
-                
-            return 'OK', 200
-        else:
-            logger.error("Invalid content type")
-            return 'Invalid content type', 400
-    except Exception as e:
-        logger.error(f"Webhook error: {e}", exc_info=True)
-        return str(e), 500
+def run_flask():
+    """Run Flask in a separate thread"""
+    flask_app.run(
+        host='0.0.0.0',
+        port=config.PORT,
+        debug=False,
+        use_reloader=False
+    )
 
 # ==================== DATABASE ====================
 
@@ -687,61 +669,33 @@ def create_bot():
 
 # ==================== MAIN ====================
 
-def run_flask():
-    """Run Flask in a separate thread"""
-    flask_app.run(
-        host='0.0.0.0',
-        port=config.PORT,
-        debug=False,
-        use_reloader=False
-    )
-
 async def main():
     """Main async function"""
-    global main_loop
-    
-    # Store the main event loop so Flask can use it
-    main_loop = asyncio.get_event_loop()
-    
     logger.info("🚀 Starting Video Encoder Bot 2025...")
     logger.info(f"📋 Configuration:")
     logger.info(f"   API_ID: {config.API_ID}")
     logger.info(f"   BOT_TOKEN: ...{config.BOT_TOKEN[-10:]}")
-    logger.info(f"   WEBHOOK_URL: {config.WEBHOOK_URL}")
     logger.info(f"   PORT: {config.PORT}")
     
     # Create bot instance
     create_bot()
     
-    # Start bot
+    # Start bot (Polling mode)
     await bot.start()
     me = await bot.get_me()
     logger.info(f"✅ Bot started: @{me.username}")
-    
-    # MANUAL WEBHOOK INSTRUCTION
-    # Pyrogram doesn't have a helper for this, so we tell you how to do it.
-    if config.WEBHOOK_URL:
-        webhook_url = f"{config.WEBHOOK_URL}/webhook/{config.BOT_TOKEN}"
-        logger.info("-" * 50)
-        logger.info("📡 WEBHOOK SETUP REQUIRED (ONE TIME ONLY)")
-        logger.info(f"👉 Please visit this URL in your browser to connect Telegram:")
-        logger.info(f"https://api.telegram.org/bot{config.BOT_TOKEN}/setWebhook?url={webhook_url}")
-        logger.info("-" * 50)
-    else:
-        logger.warning("⚠️ WEBHOOK_URL not set via RENDER_EXTERNAL_URL")
-
-    logger.info("✅ Bot is ready and waiting for webhook updates...")
+    logger.info("✅ Polling mode active. Flask running in background.")
     
     # Keep bot running
     await idle()
 
 if __name__ == "__main__":
     # 1. Start Flask in a background thread
-    # We set daemon=True so it dies when the main thread dies
+    # This is CRITICAL for Render to think the service is healthy
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
-    # 2. Run Pyrogram in the main thread
+    # 2. Run Pyrogram in the main thread using Polling
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
